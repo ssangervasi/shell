@@ -23,7 +23,7 @@
 
 char** arrConcat(char** addto, char** addition, int* tosize, int* addsize);
 char** tokenify(char* str);
-
+char*** parseCommand(char* comlist);
 
 int main(int argc, char **argv) {
     char *prompt = ";) ";
@@ -46,6 +46,18 @@ int main(int argc, char **argv) {
 	buflen = i-1;
 	
 	char *** commands = parseCommand(buffer);
+	char* test = "a b c d e f g";
+	//char*** commands[2] = {tokenify(test), NULL}; 
+	int a = 0;
+	int b = 0;
+	for(; commands[a]!=NULL; a++){
+		for(; (commands[a])[b] != NULL; b++){
+			printf("Command: %s\n", (commands[a])[b]);
+			//printf("Size of Token: %d\n", strlen((commands[a])[b]));
+		}
+		b=0;
+	}
+
 
     pid_t p = fork();
     if (p == 0) {
@@ -84,26 +96,31 @@ char*** parseCommand(char* comlist)
 	int comlen = strlen(comlist);
 	int* semindex = malloc(sizeof(int)*(comlen+1));
 	int john = 1; //number of last valid semicolon (length of semindex) 
-	semindex[0] = 0;
+	semindex[0] = -1;
 	int lastcom = 0;
+	printf("AHAHHA\n");
 	for(; i < comlen; i++){
 		if(comlist[i] == ';'){
 			semindex[john] = i;
 			john++;
+			printf("found semi \n");
 			
 		} else if(!isspace(comlist[i])){
 			lastcom = john;
 		}
+		//printf("Ran semicolon find: %d of %d\n", i, john);
 	}
-	char *** parsed = malloc(sizeof(char**)*john); //with a reminder to set the last element to NULL
+	char *** parsed = malloc(sizeof(char**)*(john+1)); //with a reminder to set the last element to NULL
 	i = 0;
 	char* totoken;
 	for(; i < john; i++){
-		totoken = strndup(comlist[i], sizeof(char)*(semindex[i+1]-semindex[i]));
+		totoken = strndup(&comlist[semindex[i]+1], sizeof(char)*(1+semindex[i+1]-semindex[i]));
 		parsed[i] = tokenify(totoken);
 		free(totoken);
+		printf("Ran tokenify: %d of %d\n", i, john);
 	}	
 	free(semindex);
+	parsed[john+1] = NULL; //changed this to +1 bc we added -1 as element 0
 	
 	return parsed;
 }
@@ -155,7 +172,7 @@ char** tokenify(char* str)
 	totalarray[0] = NULL;
 
 	for(; i<=slen; i++){
-		if(!isspace(str[i])){
+		if(!isspace(str[i]) && str[i]!=';'){
 			if(begin == NULL){
 				begin = (str+i);
 			}			
@@ -198,6 +215,10 @@ char** tokenify(char* str)
 		totalarray = arrConcat(totalarray, buffarray, &totalsize, &inbuff);		
 	}
 	free(buffarray); //I hope I have taken care of all memory leaks...
+	/*int blah = 0;	
+	for(; totalarray[blah]!=NULL; blah++){
+		printf("token:%s\n", totalarray[blah]);
+	}*/
 	return totalarray;
 }
 
