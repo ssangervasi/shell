@@ -24,69 +24,95 @@
 char** arrConcat(char** addto, char** addition, int* tosize, int* addsize);
 char** tokenify(char* str);
 char*** parseCommand(char* comlist);
+int changeMode(int seq, char* newmode);
 
 int main(int argc, char **argv) {
     char *prompt = ";) ";
     printf("%s", prompt);
     fflush(stdout);
-    
+    unsigned int sequential = 1;
+	
+ 
     char buffer[1024];
     while (fgets(buffer, 1024, stdin) != NULL) {
         /* process current command line in buffer */
         /* just a hard-coded command here right now */
-        
-        char *cmd[] = { "/bin/ls", "-ltr", ".", NULL };
+        //char *cmd[] = { "/bin/ls", "-ltr", ".", NULL };
 
-	int buflen = 1023;
-	int i = 0;
-	while( i<buflen && buffer[i] != '#'){
-		i++;
-	}
-	buffer[i] = '\0';
-	buflen = i-1;
-	
-	char *** commands = parseCommand(buffer);
-	char* test = "a b c d e f g";
-	//char*** commands[2] = {tokenify(test), NULL}; 
-	int a = 0;
-	int b = 0;
-	for(; commands[a]!=NULL; a++){
-		for(; (commands[a])[b] != NULL; b++){
-			printf("Command: %s\n", (commands[a])[b]);
-			//printf("Size of Token: %d\n", strlen((commands[a])[b]));
+		int buflen = 1023;
+		int i = 0;
+		while( i<buflen && buffer[i] != '#'){
+			i++;
 		}
-		b=0;
+		buffer[i] = '\0';
+		buflen = i-1;
+		
+		char *** cmd = parseCommand(buffer);
+		/*char* test = "a b c d e f g";
+		char*** cmd[2] = {tokenify(test), NULL}; 
+		int a = 0;
+		int b = 0;
+		for(; cmd[a]!=NULL; a++){
+			for(; (cmd[a])[b] != NULL; b++){
+				printf("Command: %s\n", (cmd[a])[b]);
+				//printf("Size of Token: %d\n", strlen((cmd[a])[b]));
+			}
+			b=0;
+		}
+		*/
+
+		int com = 0; //Will be used to increment through cmd
+		//Sequential Running of cmd:
+		for(; sequential==1 && cmd[com] != NULL; com++){	
+			if((cmd[com])[0] == "mode"){
+				sequential = changeMode(sequential, (cmd[com])[1]);
+			}
+			
+    		pid_t p = fork();
+    		if (p == 0) {
+    	    	    /* in child */
+    		        if (execv((cmd[com])[0], cmd[com]) < 0) {
+    	    	        fprintf(stderr, "execv failed: %s\n", strerror(errno));
+    	    	    }
+	
+		    } else if (p > 0) {
+		            /* in parent */
+		            int rstatus = 0;
+		            pid_t childp = wait(&rstatus);
+		
+		            /* for this simple starter code, the only child process we should
+		               "wait" for is the one we just spun off, so check that we got the
+		               same process id */ 
+		            assert(p == childp);
+		
+		            printf("Parent got carcass of child process %d, return val %d\n", childp, rstatus);
+		    } else {
+		            /* fork had an error; bail out */
+		            fprintf(stderr, "fork failed: %s\n", strerror(errno));
+		    }
+	
+    	}
+		
+    	printf("%s", prompt);
+    	fflush(stdout);
 	}
-
-
-    pid_t p = fork();
-    if (p == 0) {
-            /* in child */
-            if (execv(cmd[0], cmd) < 0) {
-                fprintf(stderr, "execv failed: %s\n", strerror(errno));
-            }
-
-    } else if (p > 0) {
-            /* in parent */
-            int rstatus = 0;
-            pid_t childp = wait(&rstatus);
-
-            /* for this simple starter code, the only child process we should
-               "wait" for is the one we just spun off, so check that we got the
-               same process id */ 
-            assert(p == childp);
-
-            printf("Parent got carcass of child process %d, return val %d\n", childp, rstatus);
-    } else {
-            /* fork had an error; bail out */
-            fprintf(stderr, "fork failed: %s\n", strerror(errno));
-    }
-
-    printf("%s", prompt);
-    fflush(stdout);
-    }
     printf("exited\n");
     return 0;
+}	
+
+int changeMode(int seq, char* newmode){
+	char** mode = {"parallel\n", "sequential"};
+	if(newmode == NULL){
+		printf("\nCURRENT TASK MODE: %s\n", mode[seq]); 
+	} else if(newmode == "sequential"){
+		seq = 1;
+	} else if (newmode == "parallel"){
+		seq = 0;
+	} else{
+		printf("EXCUSE ME, UH, MODE COMMAND NOT RECOGNIZED.\n IF YOU WANT TO CHANGE TASK MODE, ENTER EITHER:\n\tmode sequential\n\tmode parallel\n");
+		printf("\nCURRENT TASK MODE, just FYI, dude: %s\n", mode[seq]);
+	}
+	return seq;
 }
 
 char*** parseCommand(char* comlist)
