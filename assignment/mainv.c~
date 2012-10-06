@@ -203,14 +203,7 @@ int parallel(char *** cmd) {
 				        fprintf(stderr, "fork failed: %s\n", strerror(errno));
 				}
 	}
-	if (exit = 1){
-		exit();
-	}
-	if (modechange != NULL) {
-		seq = changeMode(seq, modechange);
-	}
-	
-	return seq;
+
 }
 
 /* 	Array Concatonation is a helper function I wrote that is used in "tokenify"  
