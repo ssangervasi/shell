@@ -24,7 +24,10 @@
 char** arrConcat(char** addto, char** addition, int* tosize, int* addsize);
 char** tokenify(char* str);
 char*** parseCommand(char* comlist);
+int builtIn(char** command);
 int changeMode(int seq, char* newmode);
+int parallel(char *** cmd);
+void runSeq(char ** command);
 
 int main(int argc, char **argv) {
     char *prompt = ";) ";
@@ -48,18 +51,17 @@ int main(int argc, char **argv) {
 		buflen = i-1;
 		
 		char *** cmd = parseCommand(buffer);
-		/*char* test = "a b c d e f g";
-		char*** cmd[2] = {tokenify(test), NULL}; 
-		int a = 0;
+		//char* test = "a b c d e f g";
+		//char*** cmd[2] = {tokenify(test), NULL}; 
+		/*int a = 0;
 		int b = 0;
 		for(; cmd[a]!=NULL; a++){
 			for(; (cmd[a])[b] != NULL; b++){
 				printf("Command: %s\n", (cmd[a])[b]);
-				//printf("Size of Token: %d\n", strlen((cmd[a])[b]));
 			}
 			b=0;
-		}
-		*/
+		}*/
+		
 
 		int com = 0; //Will be used to increment through cmd
 		int built;
@@ -67,22 +69,28 @@ int main(int argc, char **argv) {
 		for(; sequential==1 && cmd[com] != NULL; com++){	
 			built = builtIn(cmd[com]);
 			if(built == 1){
-				seq = changeMode(seq, (cmd[com])[1]);
+				sequential = changeMode(sequential, (cmd[com])[1]);
 			} else if(built == -1){
-				exit();
+				exit(2);
 			} else{
+				printf("exited\n");
 				runSeq(cmd[com]);
 			}
-			
-    	if (sequential == 0){
-			parallel(cmd+com);	
+		}	
+    	if (sequential == 0 && cmd[com]!=NULL){
+			sequential = parallel(cmd+com);	
     	}
+		if(sequential < -1){
+			exit(2);
+		}
 		
+		free(cmd);
     	printf("%s", prompt);
     	fflush(stdout);
 	}
     printf("exited\n");
     return 0;
+
 }	
 
 void runSeq(char ** command){
@@ -108,23 +116,99 @@ void runSeq(char ** command){
 
 
 }
+
+int parallel(char *** cmd) {
+
+  /* Check each element of commands by calling builtin. If builtin returns 0 then not a built in, equals 1 then run all processes --> do changemode, equals -1 run all processes ..> exit */
+
+	char* modechange = NULL; // command to change mode
+	int exit = 0;     // change to 1 if i get an exit command
+	int index = 0;	// place in commands
+	int rbuiltin;	// result of builtin
+	int* builtins = malloc((sizeof(cmd)/sizeof(char ***))*sizeof(int)); //will not want to exec these
+	builtins[0] = -1;
+	int seq = 0; // will return seq
+	int numpids = sizeof(cmd)/sizeof(char***);
+	int* pids = malloc((numpids)*sizeof(pid_t)); // process ids of children
+	int builtinsf = 0;
+
+	for(; cmd[index] != NULL; index++) {
+		rbuiltin = builtIn(cmd[index]);
+		if (rbuiltin == 1){
+			modechange = (cmd[index])[1]; //keep track of where mode command was
+			builtins[builtinsf] = index;
+			builtinsf++; 
+		}
+		else if (rbuiltin == -1) {
+			exit = 1; // record that an exit request was made
+			builtins[builtinsf] = index;
+			builtinsf++; 
+		}
+	}	
+	int j = 0;
+	numpids = numpids-builtinsf;
+	builtinsf = 0; //indexing through builtins	
+	while (j < index) {
+		if (j != builtins[builtinsf]) { // check if we want to run next command 
+			pids[j] = fork();
+			if (pids[j] == 0) {
+			   /* in child */
+				if (execv((cmd[j])[0], cmd[j]) < 0) {
+			    	fprintf(stderr, "execv failed: %s\n", strerror(errno));
+					pids[j]=-1;
+			    }
+			}else if(pids[j]<0){
+				/* fork had an error; bail out */
+				fprintf(stderr, "fork failed: %s\n", strerror(errno));
+			}
+		}
+		else {
+			builtinsf += 1;
+		}
+		j ++;
+	}
+	
+	int pidindex = 0;
+	for (;pidindex < numpids; pidindex++){
+		 if (pids[pidindex] > 0) {
+			/* in parent */
+			int rstatus = 0;
+			pid_t childp = waitpid(pids[pidindex],&rstatus,0); 
+			printf("Parent got carcass of child process %d, return val %d\n", childp, rstatus);
+		} 
+	}
+	
+	if (modechange != NULL) {
+		seq = changeMode(seq, modechange);
+	}
+
+	if (exit == 1){
+		seq = -2;
+	}
+	free(builtins);
+	free(pids);
+	return seq;
+}
+
 int builtIn(char** command){
 	int built = 0;
-	if((cmd[com])[0] == "mode"){
+	char * mode = "mode";
+	char * exit = "exit";
+	if(0 == strcmp(command[0], mode)){
 		built = 1;
-	}else if((cmd[com])[0] == "exit"){
+	}else if(0 == strcmp(command[0], exit)){
 		built = -1;
 	}
 	return built;
 }
 
 int changeMode(int seq, char* newmode){
-	char** mode = {"parallel\n", "sequential"};
+	char* mode[] = {"parallel", "sequential"};
 	if(newmode == NULL){
 		printf("\nCURRENT TASK MODE: %s\n", mode[seq]); 
-	} else if(newmode == "sequential"){
+	} else if(0 == strcmp(newmode, mode[1])){
 		seq = 1;
-	} else if (newmode == "parallel"){
+	} else if (0 == strcmp(newmode, mode[0])){
 		seq = 0;
 	} else{
 		printf("EXCUSE ME, UH, MODE COMMAND NOT RECOGNIZED.\n IF YOU WANT TO CHANGE TASK MODE, ENTER EITHER:\n\tmode sequential\n\tmode parallel\n");
@@ -133,41 +217,53 @@ int changeMode(int seq, char* newmode){
 	return seq;
 }
 
+
+
+
 char*** parseCommand(char* comlist)
 {
 	
 	int i = 0;
 	int comlen = strlen(comlist);
 	int* semindex = malloc(sizeof(int)*(comlen+1));
-	int john = 1; //number of last valid semicolon (length of semindex) 
+	int john = 1;  
 	semindex[0] = -1;
-	int lastcom = 0;
-	printf("AHAHHA\n");
+	int lastcom = 0; //number of last valid semicolon (length of semindex)
+	int valid = 0;
 	for(; i < comlen; i++){
-		if(comlist[i] == ';'){
+		if(1==valid && comlist[i] == ';'){
 			semindex[john] = i;
 			john++;
-			printf("found semi \n");
+			valid = 0;
+			//printf("found semi \n");
 			
 		} else if(!isspace(comlist[i])){
 			lastcom = john;
+			valid = 1;
 		}
 		//printf("Ran semicolon find: %d of %d\n", i, john);
 	}
-	char *** parsed = malloc(sizeof(char**)*(john+1)); //with a reminder to set the last element to NULL
+	if(john == 1){
+		semindex[john] = comlen;
+	}
+	char *** parsed = malloc(sizeof(char**)*(lastcom+1)); //with a reminder to set the last element to NULL
 	i = 0;
 	char* totoken;
-	for(; i < john; i++){
+	for(; i < lastcom; i++){
 		totoken = strndup(&comlist[semindex[i]+1], sizeof(char)*(1+semindex[i+1]-semindex[i]));
 		parsed[i] = tokenify(totoken);
 		free(totoken);
-		printf("Ran tokenify: %d of %d\n", i, john);
+		//printf("Ran tokenify: %d of %d\n", i, john);
 	}	
 	free(semindex);
-	parsed[john+1] = NULL; //changed this to +1 bc we added -1 as element 0
+	parsed[lastcom] = NULL; //changed this to +1 bc we added -1 as element 0
 	
 	return parsed;
 }
+
+
+
+
 
 /* 	Array Concatonation is a helper function I wrote that is used in "tokenify"  
 	to make the combination of the total array and a buffer array (of strings).
@@ -194,6 +290,7 @@ char** arrConcat(char** addto, char** addition, int* tosize, int* addsize)
 		j++;
 	}
 	free(addto);
+	
 	return newarr; 
 }
 
@@ -262,7 +359,9 @@ char** tokenify(char* str)
 	/*int blah = 0;	
 	for(; totalarray[blah]!=NULL; blah++){
 		printf("token:%s\n", totalarray[blah]);
-	}*/
+	}
+	*/
+	//printf("has null\n");
 	return totalarray;
 }
 
