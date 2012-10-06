@@ -34,7 +34,9 @@ main(int argc, char **argv) {
         /* just a hard-coded command here right now */
         
         char *cmd[] = { "/bin/ls", "-ltr", ".", NULL };
-
+		char **cmd;
+		cmd[0] = "/bin/ls"; 
+	
         pid_t p = fork();
         if (p == 0) {
             /* in child */

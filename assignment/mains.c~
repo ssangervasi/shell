@@ -30,7 +30,7 @@ int main(int argc, char **argv) {
     char *prompt = ";) ";
     printf("%s", prompt);
     fflush(stdout);
-    unsigned int sequential = 1;
+    int sequential = 1;
 	
  
     char buffer[1024];
@@ -62,35 +62,20 @@ int main(int argc, char **argv) {
 		*/
 
 		int com = 0; //Will be used to increment through cmd
+		int built;
 		//Sequential Running of cmd:
 		for(; sequential==1 && cmd[com] != NULL; com++){	
-			if((cmd[com])[0] == "mode"){
-				sequential = changeMode(sequential, (cmd[com])[1]);
+			built = builtIn(cmd[com]);
+			if(built == 1){
+				seq = changeMode(seq, (cmd[com])[1]);
+			} else if(built == -1){
+				exit();
+			} else{
+				runSeq(cmd[com]);
 			}
 			
-    		pid_t p = fork();
-    		if (p == 0) {
-    	    	    /* in child */
-    		        if (execv((cmd[com])[0], cmd[com]) < 0) {
-    	    	        fprintf(stderr, "execv failed: %s\n", strerror(errno));
-    	    	    }
-	
-		    } else if (p > 0) {
-		            /* in parent */
-		            int rstatus = 0;
-		            pid_t childp = wait(&rstatus);
-		
-		            /* for this simple starter code, the only child process we should
-		               "wait" for is the one we just spun off, so check that we got the
-		               same process id */ 
-		            assert(p == childp);
-		
-		            printf("Parent got carcass of child process %d, return val %d\n", childp, rstatus);
-		    } else {
-		            /* fork had an error; bail out */
-		            fprintf(stderr, "fork failed: %s\n", strerror(errno));
-		    }
-	
+    	if (sequential == 0){
+			parallel(cmd+com);	
     	}
 		
     	printf("%s", prompt);
@@ -99,6 +84,39 @@ int main(int argc, char **argv) {
     printf("exited\n");
     return 0;
 }	
+
+void runSeq(char ** command){
+	pid_t p = fork();
+    if (p == 0) {
+		/* in child */
+		if (execv(command[0], command) < 0) {
+			fprintf(stderr, "OH NO! COULDN'T EXECUTE THAT COMMAND: %s\n", strerror(errno));
+		}
+	} else if (p > 0) {
+		/* in parent */
+		int rstatus = 0;
+		pid_t childp = wait(&rstatus);
+		/* for this simple starter code, the only child process we should
+	       "wait" for is the one we just spun off, so check that we got the
+	       same process id */ 
+		assert(p == childp);
+		printf("CHILD PROCESS (%d) DID AN EXEC AND GOT PASSED TO IT'S PARENT. Return val %d\n", childp, rstatus);
+	} else {
+	 	/* fork had an error; bail out */
+		fprintf(stderr, "OH NO! WE HAD A FAILURE WHEN FORKING TO A CHILD: %s\n", strerror(errno));
+	}
+
+
+}
+int builtIn(char** command){
+	int built = 0;
+	if((cmd[com])[0] == "mode"){
+		built = 1;
+	}else if((cmd[com])[0] == "exit"){
+		built = -1;
+	}
+	return built;
+}
 
 int changeMode(int seq, char* newmode){
 	char** mode = {"parallel\n", "sequential"};
