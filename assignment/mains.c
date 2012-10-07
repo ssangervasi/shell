@@ -28,6 +28,7 @@ int builtIn(char** command);
 int changeMode(int seq, char* newmode);
 int parallel(char *** cmd);
 void runSeq(char ** command);
+void freeCmd(char *** cmd);
 
 int main(int argc, char **argv) {
     char *prompt = ";) ";
@@ -71,19 +72,24 @@ int main(int argc, char **argv) {
 			if(built == 1){
 				sequential = changeMode(sequential, (cmd[com])[1]);
 			} else if(built == -1){
+				printf("exited\n");
+				freeCmd(cmd);
+				free(cmd);
 				exit(2);
 			} else{
-				printf("exited\n");
 				runSeq(cmd[com]);
 			}
 		}	
+
     	if (sequential == 0 && cmd[com]!=NULL){
 			sequential = parallel(cmd+com);	
     	}
 		if(sequential < -1){
+			freeCmd(cmd);
+			free(cmd);
 			exit(2);
 		}
-		
+		freeCmd(cmd);
 		free(cmd);
     	printf("%s", prompt);
     	fflush(stdout);
@@ -91,7 +97,16 @@ int main(int argc, char **argv) {
     printf("exited\n");
     return 0;
 
-}	
+}
+
+void freeCmd(char *** cmd){
+	int index = 0;
+	while(cmd[index]!=NULL){
+		free(cmd[index]);
+		index++;
+	}
+	free(cmd[index]);
+}
 
 void runSeq(char ** command){
 	pid_t p = fork();
@@ -99,6 +114,7 @@ void runSeq(char ** command){
 		/* in child */
 		if (execv(command[0], command) < 0) {
 			fprintf(stderr, "OH NO! COULDN'T EXECUTE THAT COMMAND: %s\n", strerror(errno));
+			exit(2);
 		}
 	} else if (p > 0) {
 		/* in parent */
@@ -121,7 +137,8 @@ int parallel(char *** cmd) {
 
   /* Check each element of commands by calling builtin. If builtin returns 0 then not a built in, equals 1 then run all processes --> do changemode, equals -1 run all processes ..> exit */
 
-	char* modechange = NULL; // command to change mode
+	char* modechange = "NOT THIS"; // command to change mode
+	unsigned int modetest=0;
 	int exit = 0;     // change to 1 if i get an exit command
 	int index = 0;	// place in commands
 	int rbuiltin;	// result of builtin
@@ -136,6 +153,7 @@ int parallel(char *** cmd) {
 		rbuiltin = builtIn(cmd[index]);
 		if (rbuiltin == 1){
 			modechange = (cmd[index])[1]; //keep track of where mode command was
+			modetest = 1;
 			builtins[builtinsf] = index;
 			builtinsf++; 
 		}
@@ -154,12 +172,13 @@ int parallel(char *** cmd) {
 			if (pids[j] == 0) {
 			   /* in child */
 				if (execv((cmd[j])[0], cmd[j]) < 0) {
-			    	fprintf(stderr, "execv failed: %s\n", strerror(errno));
+			    	fprintf(stderr, "EXEC FAILED: %s\n", strerror(errno));
 					pids[j]=-1;
+					return -2;
 			    }
 			}else if(pids[j]<0){
 				/* fork had an error; bail out */
-				fprintf(stderr, "fork failed: %s\n", strerror(errno));
+				fprintf(stderr, "FORK FAILED: %s\n", strerror(errno));
 			}
 		}
 		else {
@@ -177,8 +196,7 @@ int parallel(char *** cmd) {
 			printf("Parent got carcass of child process %d, return val %d\n", childp, rstatus);
 		} 
 	}
-	
-	if (modechange != NULL) {
+	if (1 == modetest) {
 		seq = changeMode(seq, modechange);
 	}
 
@@ -202,8 +220,9 @@ int builtIn(char** command){
 	return built;
 }
 
-int changeMode(int seq, char* newmode){
+int changeMode(int sequential, char* newmode){
 	char* mode[] = {"parallel", "sequential"};
+	int seq = sequential;
 	if(newmode == NULL){
 		printf("\nCURRENT TASK MODE: %s\n", mode[seq]); 
 	} else if(0 == strcmp(newmode, mode[1])){
@@ -290,7 +309,7 @@ char** arrConcat(char** addto, char** addition, int* tosize, int* addsize)
 		j++;
 	}
 	free(addto);
-	
+	//free(addition);
 	return newarr; 
 }
 
