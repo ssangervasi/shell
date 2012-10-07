@@ -27,8 +27,9 @@ char*** parseCommand(char* comlist);
 int builtIn(char** command);
 int changeMode(int seq, char* newmode);
 int parallel(char *** cmd);
-void runSeq(char ** command);
+int runSeq(char ** command);
 void freeCmd(char *** cmd);
+int arrlen(char*** arr);
 
 int main(int argc, char **argv) {
     char *prompt = ";) ";
@@ -37,7 +38,7 @@ int main(int argc, char **argv) {
     int sequential = 1;
 	
  
-    char buffer[1024];
+    char buffer[1024] = "initialized";
     while (fgets(buffer, 1024, stdin) != NULL) {
         /* process current command line in buffer */
         /* just a hard-coded command here right now */
@@ -72,25 +73,24 @@ int main(int argc, char **argv) {
 			if(built == 1){
 				sequential = changeMode(sequential, (cmd[com])[1]);
 			} else if(built == -1){
-				printf("exited\n");
-				freeCmd(cmd);
-				free(cmd);
-				exit(2);
+				sequential = -1;
 			} else{
-				runSeq(cmd[com]);
+				sequential = runSeq(cmd[com]);
 			}
 		}	
 
     	if (sequential == 0 && cmd[com]!=NULL){
 			sequential = parallel(cmd+com);	
     	}
-		if(sequential < -1){
-			freeCmd(cmd);
-			free(cmd);
+		if(sequential == -2){
+			exitUsage();
 			exit(2);
 		}
 		freeCmd(cmd);
 		free(cmd);
+		if(sequential == -1){
+			exit(2);
+		}
     	printf("%s", prompt);
     	fflush(stdout);
 	}
@@ -98,6 +98,9 @@ int main(int argc, char **argv) {
     return 0;
 
 }
+
+void exitUsage(){
+	
 
 void freeCmd(char *** cmd){
 	int index = 0;
@@ -108,13 +111,13 @@ void freeCmd(char *** cmd){
 	free(cmd[index]);
 }
 
-void runSeq(char ** command){
+int runSeq(char ** command){
 	pid_t p = fork();
     if (p == 0) {
 		/* in child */
 		if (execv(command[0], command) < 0) {
 			fprintf(stderr, "OH NO! COULDN'T EXECUTE THAT COMMAND: %s\n", strerror(errno));
-			exit(2);
+			return -2;
 		}
 	} else if (p > 0) {
 		/* in parent */
@@ -129,8 +132,16 @@ void runSeq(char ** command){
 	 	/* fork had an error; bail out */
 		fprintf(stderr, "OH NO! WE HAD A FAILURE WHEN FORKING TO A CHILD: %s\n", strerror(errno));
 	}
+	
+	return 1;
+}
 
-
+int arrlen(char*** arr){
+	int count = 0;
+	while(arr[count] != NULL){
+		count++;
+	}
+	return count-1;
 }
 
 int parallel(char *** cmd) {
@@ -142,13 +153,12 @@ int parallel(char *** cmd) {
 	int exit = 0;     // change to 1 if i get an exit command
 	int index = 0;	// place in commands
 	int rbuiltin;	// result of builtin
-	int* builtins = malloc((sizeof(cmd)/sizeof(char ***))*sizeof(int)); //will not want to exec these
-	builtins[0] = -1;
 	int seq = 0; // will return seq
-	int numpids = sizeof(cmd)/sizeof(char***);
-	int* pids = malloc((numpids)*sizeof(pid_t)); // process ids of children
+	int numcommands = arrlen(cmd);
+	int* builtins = malloc(numcommands*sizeof(int)); //will not want to exec these
+	builtins[0] = -1;
+	
 	int builtinsf = 0;
-
 	for(; cmd[index] != NULL; index++) {
 		rbuiltin = builtIn(cmd[index]);
 		if (rbuiltin == 1){
@@ -163,23 +173,31 @@ int parallel(char *** cmd) {
 			builtinsf++; 
 		}
 	}	
+
 	int j = 0;
-	numpids = numpids-builtinsf;
-	builtinsf = 0; //indexing through builtins	
-	while (j < index) {
+	if(builtinsf<numcommands){
+		builtins[builtinsf] = -1;
+	}
+	int numpids = 1+numcommands-builtinsf;
+	int* pids = malloc(numpids*sizeof(pid_t)); // process ids of children
+	
+	builtinsf = 0; //indexing through builtins
+	index = 0;
+	while (j <= numcommands) {
 		if (j != builtins[builtinsf]) { // check if we want to run next command 
-			pids[j] = fork();
-			if (pids[j] == 0) {
+			pids[index] = fork();
+			if (pids[index] == 0) {
 			   /* in child */
 				if (execv((cmd[j])[0], cmd[j]) < 0) {
 			    	fprintf(stderr, "EXEC FAILED: %s\n", strerror(errno));
-					pids[j]=-1;
+					pids[index]=-1;
 					return -2;
 			    }
-			}else if(pids[j]<0){
+			}else if(pids[index]<0){
 				/* fork had an error; bail out */
 				fprintf(stderr, "FORK FAILED: %s\n", strerror(errno));
 			}
+			index++;
 		}
 		else {
 			builtinsf += 1;
@@ -201,7 +219,7 @@ int parallel(char *** cmd) {
 	}
 
 	if (exit == 1){
-		seq = -2;
+		seq = -1;
 	}
 	free(builtins);
 	free(pids);
@@ -221,13 +239,13 @@ int builtIn(char** command){
 }
 
 int changeMode(int sequential, char* newmode){
-	char* mode[] = {"parallel", "sequential"};
+	char* mode[] = {"parallel", "sequential", "p","s"};
 	int seq = sequential;
 	if(newmode == NULL){
 		printf("\nCURRENT TASK MODE: %s\n", mode[seq]); 
-	} else if(0 == strcmp(newmode, mode[1])){
+	} else if(0 == strcmp(newmode, mode[1]) || 0 == strcmp(newmode, mode[3])){
 		seq = 1;
-	} else if (0 == strcmp(newmode, mode[0])){
+	} else if (0 == strcmp(newmode, mode[0]) || 0 == strcmp(newmode, mode[2])){
 		seq = 0;
 	} else{
 		printf("EXCUSE ME, UH, MODE COMMAND NOT RECOGNIZED.\n IF YOU WANT TO CHANGE TASK MODE, ENTER EITHER:\n\tmode sequential\n\tmode parallel\n");
@@ -256,7 +274,7 @@ char*** parseCommand(char* comlist)
 			valid = 0;
 			//printf("found semi \n");
 			
-		} else if(!isspace(comlist[i])){
+		} else if(!isspace(comlist[i]) && comlist[i]!=';'){
 			lastcom = john;
 			valid = 1;
 		}
@@ -267,15 +285,29 @@ char*** parseCommand(char* comlist)
 	}
 	char *** parsed = malloc(sizeof(char**)*(lastcom+1)); //with a reminder to set the last element to NULL
 	i = 0;
+	int j = 0;
 	char* totoken;
+	char** tokened;
 	for(; i < lastcom; i++){
-		totoken = strndup(&comlist[semindex[i]+1], sizeof(char)*(1+semindex[i+1]-semindex[i]));
-		parsed[i] = tokenify(totoken);
+		totoken = strndup(&comlist[semindex[i]+1], sizeof(char)*(semindex[i+1]-semindex[i]));		
+		tokened = tokenify(totoken);
+		if(tokened[0] != NULL){
+			parsed[j] = tokened;
+			j++;
+		} else{
+			free(tokened);
+		}
+		//printf("TOTOKEN IS -%s-\n", totoken);
+		/*int blah = 0;
+		while((parsed[i])[blah] != NULL){
+			printf("TOKENIFIED -%s-\n", (parsed[i])[blah]);
+			blah++;
+		}*/
 		free(totoken);
 		//printf("Ran tokenify: %d of %d\n", i, john);
 	}	
 	free(semindex);
-	parsed[lastcom] = NULL; //changed this to +1 bc we added -1 as element 0
+	parsed[lastcom] = NULL; 
 	
 	return parsed;
 }
@@ -289,6 +321,7 @@ char*** parseCommand(char* comlist)
 */
 char** arrConcat(char** addto, char** addition, int* tosize, int* addsize)
 {
+	//printf("one\n");
 	int i=0;
 	int j=0;
 	int totsize = (*tosize)+(*addsize)+1;
@@ -299,8 +332,8 @@ char** arrConcat(char** addto, char** addition, int* tosize, int* addsize)
 		newarr[i] = strdup(addto[i]);
 		free(addto[i]);
 		i++; 
-	}	
-		
+	}
+	free(addto[*tosize]);
 	while(j<*addsize){
 		//memsize = strlen(addition[j])*sizeof(char);
 		newarr[i] = strdup(addition[j]);
@@ -308,8 +341,13 @@ char** arrConcat(char** addto, char** addition, int* tosize, int* addsize)
 		i++;
 		j++;
 	}
+	/*while(j<6){
+		free(addition[j]);
+		j++;
+	}*/
 	free(addto);
-	//free(addition);
+	newarr[totsize-1] = NULL;
+	//printf("two\n");
 	return newarr; 
 }
 

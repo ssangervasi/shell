@@ -179,7 +179,7 @@ int parallel(char *** cmd) {
 	
 	builtinsf = 0; //indexing through builtins
 	index = 0;
-	while (j <= numcommands) {
+	while (j < numcommands) {
 		if (j != builtins[builtinsf]) { // check if we want to run next command 
 			pids[index] = fork();
 			if (pids[index] == 0) {
@@ -293,7 +293,7 @@ char*** parseCommand(char* comlist)
 		} else{
 			free(tokened);
 		}
-		//printf("TOTOKEN IS -%s-\n", totoken);
+		printf("TOTOKEN IS -%s-\n", totoken);
 		/*int blah = 0;
 		while((parsed[i])[blah] != NULL){
 			printf("TOKENIFIED -%s-\n", (parsed[i])[blah]);
