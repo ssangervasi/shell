@@ -20,7 +20,7 @@
 #include <signal.h>
 #include <errno.h>
 #include <assert.h>
-
+long int minus(long int alpha, long int beta);
 char** arrConcat(char** addto, char** addition, int* tosize, int* addsize);
 char** tokenify(char* str);
 char*** parseCommand(char* comlist);
@@ -30,8 +30,12 @@ int parallel(char *** cmd);
 int runSeq(char ** command);
 void freeCmd(char *** cmd);
 int arrlen(char*** arr);
+void exitUsage(struct rusage* usageBegin);
 
 int main(int argc, char **argv) {
+	struct rusage usageBegin;
+	getrusage(RUSAGE_SELF, &usageBegin);
+
     char *prompt = ";) ";
     printf("%s", prompt);
     fflush(stdout);
@@ -88,14 +92,37 @@ int main(int argc, char **argv) {
 		freeCmd(cmd);
 		free(cmd);
 		if(sequential == -1){
+			exitUsage(&usageBegin);
 			exit(2);
 		}
     	printf("%s", prompt);
     	fflush(stdout);
 	}
+	exitUsage(&usageBegin);
     printf("exited\n");
     return 0;
 
+}
+
+void exitUsage(struct rusage * usageBegin){
+	struct rusage usageEnd;
+	struct timeval userBeg, systemBeg, userEnd, systemEnd;
+	if(0 == getrusage(RUSAGE_SELF, &usageEnd)){
+		userBeg = (*usageBegin).ru_utime;
+		systemBeg = (*usageBegin).ru_stime;
+		userEnd = (usageEnd).ru_stime;
+		systemEnd = (usageEnd).ru_stime;
+		printf("TIME SPENT IN FANTASTIC USER MODE <3 %ld.%ld sec <3\n", minus(userBeg.tv_sec, userEnd.tv_sec), minus(userBeg.tv_usec, userEnd.tv_usec));
+		printf("TIME SPENT IN WONDERFUL KERNEL MODE :$ %ld.%ld sec :$ \n", minus(systemBeg.tv_sec, systemEnd.tv_sec), minus(systemBeg.tv_usec, systemEnd.tv_usec));   
+	}
+	return;	
+}
+
+long int minus(long int alpha, long int beta){
+	if(alpha>beta){
+		return (alpha-beta);
+	}
+	return (beta-alpha);
 }
 
 void freeCmd(char *** cmd){
