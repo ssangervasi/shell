@@ -173,24 +173,26 @@ int main(int argc, char **argv) {
 				freeCmd(cmd);
 				free(cmd);
 				if(sequential == -1){ //totally wrong. fix. -- fixed 
-					struct node *waiter = tasks;
-					while(waiter!=NULL){
-						int rstatus = 0;
-						pid_t childp = waitpid((*waiter).pid, &rstatus,0); 
-						printf("Parent got carcass of child process %d, return val %d\n", childp, rstatus);
-						waiter = (*waiter).next;
-					}
-					while((*tasks).next!=NULL){
-						waiter = (*tasks).next;
-						free(tasks);
-						tasks = waiter;
-					}
+					if(tasks!=NULL){
+						struct node *waiter = tasks;
+						while(waiter!=NULL){
+							int rstatus = 0;
+							pid_t childp = waitpid((*waiter).pid, &rstatus,0); 
+							printf("Parent got carcass of child process %d, return val %d\n", childp, rstatus);
+							waiter = (*waiter).next;
+						}
+						while((*tasks).next!=NULL){
+							waiter = (*tasks).next;
+							free(tasks);
+							tasks = waiter;
+						}
 					free(tasks);
+					}
 					exitUsage(&usageBegin);
 					exit(2);
 				}
-			printf("%s", prompt);
-			fflush(stdout);
+				printf("%s", prompt);
+				fflush(stdout);
 			}
 		}
 	}
@@ -309,7 +311,6 @@ int*** parallel(char *** cmd, struct node *paths) {
 	*seq = 0;
 	seqholder[0] = seq;
 	int numcommands = arrlen(cmd);
-	printf("\nnumcom:%d\n", numcommands);
 	int* builtins = malloc(numcommands*sizeof(int)); //will not want to exec these
 	builtins[0] = -1;
 	
@@ -333,7 +334,7 @@ int*** parallel(char *** cmd, struct node *paths) {
 	if(builtinsf<numcommands){
 		builtins[builtinsf] = -1;
 	}
-	int numpids = 1+numcommands-builtinsf;
+	int numpids = numcommands-builtinsf;
 	//int* pids = malloc(numpids*sizeof(pid_t)); // process ids of children
 	processes = malloc((2+numpids)*sizeof(int**));
 	processes[0] = seqholder;
@@ -343,14 +344,12 @@ int*** parallel(char *** cmd, struct node *paths) {
 	processes[1] = numpro;
 	builtinsf = 0; //indexing through builtins
 	index = 2;
-	printf("Starting fork loop\n Size char:%d \n", sizeof(char));
-	printf("Size int:%d", sizeof(int));
 	char* goodCommand;
 	int j = 0;
 	while (j < numcommands) {
 		if (j != builtins[builtinsf]) { // check if we want to run next command
 			//stat check here 
-			printf("\ncmd[j][0]:%p\n", cmd[j]);
+			//printf("\ncmd[j][0]:%p\n", cmd[j]);
 			goodCommand = pathCheck((cmd[j])[0], paths);
 			if(goodCommand == NULL){
 				printf("OH NO! COULDN'T EXECUTE THAT COMMAND: %s", (cmd[j])[0]);
@@ -390,16 +389,7 @@ int*** parallel(char *** cmd, struct node *paths) {
 		}
 		j++;
 	}
-	/*
-	int pidindex = 0;
-	for (;pidindex < numpids; pidindex++){
-		 if (pids[pidindex] > 0) {
-			int rstatus = 0;
-			pid_t childp = waitpid(pids[pidindex],&rstatus,0); 
-			printf("Parent got carcass of child process %d, return val %d\n", childp, rstatus);
-		} 
-	}
-	*/
+
 	if (1 == modetest) {
 		(processes[0])[0][0] = changeMode(0, modechange); //should be same as: seq[0] = changeMode(0, modechange);
 	}
@@ -408,7 +398,6 @@ int*** parallel(char *** cmd, struct node *paths) {
 		(processes[0])[0][0] = -1;
 	}
 	free(builtins);
-	printf("Did parallel\n");
 	return processes;
 }
 
