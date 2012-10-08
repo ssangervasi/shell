@@ -33,7 +33,7 @@ char** tokenify(char* str);
 char*** parseCommand(char* comlist);
 int builtIn(char** command);
 int changeMode(int seq, char* newmode);
-int*** parallel(char *** cmd, struct node *paths);
+int*** parallel(char *** cmd, struct node *paths, struct node *tasks);
 int runSeq(char ** command, struct node *paths);
 void freeCmd(char *** cmd);
 int arrlen(char*** arr);
@@ -42,7 +42,10 @@ void list_clear(struct node *list);
 void list_dump(struct node *list);
 void list_insert(char *name, struct node **head);
 void list_insert_ordered(char *name,  struct node **head);
-
+void resumePid(char* process, struct node *tasks);
+void jobs(struct node *tasks);
+void pausePid(char* process, struct node *tasks);
+int toInt(char* input);
 
 int main(int argc, char **argv) {
 	
@@ -72,7 +75,7 @@ int main(int argc, char **argv) {
 
 	char buffer[1024] = "initialized";
 	int polloop = 1;
-	while(polloop){
+	while(polloop ==1){
 		struct pollfd pfd = {0, POLLIN}; //"In" events check
 		int input = poll(&pfd, 1, 1000); //Input will be a 1=yes, 0=no input in the past second.
 		if(input ==0){
@@ -144,7 +147,7 @@ int main(int argc, char **argv) {
 				}	
 				int*** newpros;
 				if (sequential == 0 && cmd[com]!=NULL){					
-					newpros = parallel(cmd+com, paths);	
+					newpros = parallel(cmd+com, paths, tasks);	
 					sequential = (newpros[0])[0][0];
 					if(sequential!=-2){
 						int index = newpros[1][0][0];
@@ -193,6 +196,8 @@ int main(int argc, char **argv) {
 				}
 				printf("%s", prompt);
 				fflush(stdout);
+			}else{
+				polloop = -1;
 			}
 		}
 	}
@@ -297,7 +302,7 @@ int arrlen(char*** arr){
 	return count;
 }
 
-int*** parallel(char *** cmd, struct node *paths) {
+int*** parallel(char *** cmd, struct node *paths, struct node *tasks) {
 
   /* Check each element of commands by calling builtin. If builtin returns 0 then not a built in, equals 1 then run all processes --> do changemode, equals -1 run all processes ..> exit */
 	int*** processes;
@@ -315,6 +320,8 @@ int*** parallel(char *** cmd, struct node *paths) {
 	builtins[0] = -1;
 	
 	int builtinsf = 0;
+	char * jobcommand = "not this";
+	int jobtest = 0;
 	for(; cmd[index] != NULL; index++) {
 		rbuiltin = builtIn(cmd[index]);
 		if (rbuiltin == 1){
@@ -322,6 +329,11 @@ int*** parallel(char *** cmd, struct node *paths) {
 			modetest = 1;
 			builtins[builtinsf] = index;
 			builtinsf++; 
+		}else if(rbuiltin > 1){
+			jobcommand = (cmd[index])[1];
+			jobtest = rbuiltin;
+			builtins[builtinsf] = index;
+			builtinsf++;
 		}
 		else if (rbuiltin == -1) {
 			exit = 1; // record that an exit request was made
@@ -393,7 +405,15 @@ int*** parallel(char *** cmd, struct node *paths) {
 	if (1 == modetest) {
 		(processes[0])[0][0] = changeMode(0, modechange); //should be same as: seq[0] = changeMode(0, modechange);
 	}
-
+	if(jobtest>1){
+		if(jobtest == 2){
+			jobs(tasks);
+		}else if(jobtest ==3){
+			pausePid(jobcommand, tasks);
+		}else if(jobtest == 4){
+			resumePid(jobcommand, tasks);
+		}
+	}
 	if (exit == 1){
 		(processes[0])[0][0] = -1;
 	}
@@ -405,10 +425,19 @@ int builtIn(char** command){
 	int built = 0;
 	char * mode = "mode";
 	char * exit = "exit";
+	char * jobs = "jobs";
+	char * pause = "pause";
+	char * resume = "resume";
 	if(0 == strcmp(command[0], mode)){
 		built = 1;
 	}else if(0 == strcmp(command[0], exit)){
 		built = -1;
+	}else if (0 == strcmp(command[0], jobs)){
+		built = 2;
+	}else if (0 == strcmp(command[0], pause)){
+		built = 3;
+	}else if (0 == strcmp(command[0], resume)){
+		built = 4;
 	}
 	return built;
 }
@@ -429,8 +458,52 @@ int changeMode(int sequential, char* newmode){
 	return seq;
 }
 
+void jobs(struct node *tasks){
+	printf("CURRENT BACKGROUND PROCESSES:\n");
+	struct node *writer = tasks;
+	while(writer!=NULL){
+		char * running = "RUNNING";
+		if((*writer).status == 0){
+			running = "PAUSED";
+		}
+		printf("PID: %d\tNAME: %s\tSTATE: %s\n", (*writer).pid, (*writer).name, running);
+		writer = (*writer).next;
+	}
+	return;
+}
 
+int toInt(char* input){
+	int val = 0;
+	int power = 1;
+	int letter = strlen(input)-1;
+	for(; letter>=0; letter --){
+		val += (input[letter] - '0')*power;
+		power *=10;
+	}
+	return val;
+}	
 
+void pausePid(char* process, struct node *tasks){
+	int PID = toInt(process);
+	struct node *writer = tasks;
+	while(writer!=NULL && (*writer).pid != PID){
+		writer = (*writer).next;
+	}
+	kill(PID, SIGSTOP);
+	(*writer).status = 0;
+	return;
+}
+
+void resumePid(char* process, struct node *tasks){
+	int PID = toInt(process);
+	struct node *writer = tasks;
+	while(writer!=NULL && (*writer).pid != PID){
+		writer = (*writer).next;
+	}
+	kill(PID, SIGCONT);
+	(*writer).status = 1;
+	return;
+}
 
 char*** parseCommand(char* comlist)
 {
