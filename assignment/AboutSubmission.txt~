@@ -1,0 +1,24 @@
+A Shell
+by: Nickie VanMeter and Sebastian Sangervasi
+
+Notes:
+	The Makefile currently will compile the file "mains.c", which was the file out of which we
+worked throughout the project. Currently it is an identical copy of "part2.c", which is our
+official submission for part 2.
+	The file "part1.c" is our submission for part 1.
+
+Workload:
+	For most of the project we worked together, side by side, neck and neck... anyway...
+	Exceptions would be:
+		- we used Sebastian's "tokenify" program to parse commands, after some editing.
+		- we used Sebastian's linked-list homework for our "struct node" uses. Note that
+			there are some excess functions associated with this that should be ignored.
+
+	Once we got through our basic setup of main(), part 1, we divided the programming so 
+that Sebastian wrote the runSeq() function and Nickie wrote the parallel() function. Both
+of these immediately crashed, so we collaboratively -- eh, hem -- perfected them. 
+
+	Part 2 was almost entirely collaborative. We did make use of the polling code that 
+Prof. Sommers posted to Piazza. 
+
+   
