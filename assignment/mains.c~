@@ -33,7 +33,7 @@ char** tokenify(char* str);
 char*** parseCommand(char* comlist);
 int builtIn(char** command);
 int changeMode(int seq, char* newmode);
-char*** parallel(char *** cmd, struct node *paths);
+int*** parallel(char *** cmd, struct node *paths);
 int runSeq(char ** command, struct node *paths);
 void freeCmd(char *** cmd);
 int arrlen(char*** arr);
@@ -45,6 +45,7 @@ void list_insert_ordered(char *name,  struct node **head);
 
 
 int main(int argc, char **argv) {
+	
 	struct rusage usageBegin;
 	getrusage(RUSAGE_SELF, &usageBegin);
 
@@ -100,7 +101,6 @@ int main(int argc, char **argv) {
 				}
 			}
 
-
 		} else if(input<0){
 			//probably need to free junk before exit.
 			polloop = 0;
@@ -115,7 +115,7 @@ int main(int argc, char **argv) {
 				}
 				buffer[i] = '\0';
 				buflen = i-1;
-		
+				//printf("Buffer:%s", buffer);
 				char *** cmd = parseCommand(buffer);
 				//char* test = "a b c d e f g";
 				//char*** cmd[2] = {tokenify(test), NULL}; 
@@ -142,15 +142,18 @@ int main(int argc, char **argv) {
 						sequential = runSeq(cmd[com], paths);
 					}
 				}	
-				char*** newpros;
+				int*** newpros;
 				if (sequential == 0 && cmd[com]!=NULL){					
 					newpros = parallel(cmd+com, paths);	
-					sequential = *((newpros[0])[0]);
+					sequential = (newpros[0])[0][0];
 					if(sequential!=-2){
-						int index = *(newpros[1][0]) +1;
+						int index = newpros[1][0][0];
 						for(;index > 1; index--){
-							if(*(newpros[index][1])>0){
-								list_insert( newpros[index][0], &tasks);
+							/*printf("Index points:%p, Index is:%d\n", newpros[index], index);
+							printf("Index[1] points:%p\n", newpros[index][1]);
+							printf("Index[1][0] points:%d\n", newpros[index][1][0]);*/
+							if(newpros[index][1][0]>0){
+								list_insert( (char*)newpros[index][0], &tasks);
 								(*tasks).pid = *(newpros[index][1]);
 								(*tasks).status = 1; //1 for running
 							}
@@ -292,18 +295,21 @@ int arrlen(char*** arr){
 	return count;
 }
 
-char*** parallel(char *** cmd, struct node *paths) {
+int*** parallel(char *** cmd, struct node *paths) {
 
   /* Check each element of commands by calling builtin. If builtin returns 0 then not a built in, equals 1 then run all processes --> do changemode, equals -1 run all processes ..> exit */
-	char*** processes;
+	int*** processes;
 	char* modechange = "NOT THIS"; // command to change mode
 	unsigned int modetest=0;
 	int exit = 0; // change to 1 if i get an exit command
 	int index = 0;	// place in commands
 	int rbuiltin;	// result of builtin
-	char ** seq = malloc(sizeof(char)); // will return seq
+	int ** seqholder = malloc(sizeof(int*)); // will return seq
+	int * seq = malloc(sizeof(int));
+	*seq = 0;
+	seqholder[0] = seq;
 	int numcommands = arrlen(cmd);
-	//printf("%d\n", numcommands);
+	printf("\nnumcom:%d\n", numcommands);
 	int* builtins = malloc(numcommands*sizeof(int)); //will not want to exec these
 	builtins[0] = -1;
 	
@@ -323,48 +329,56 @@ char*** parallel(char *** cmd, struct node *paths) {
 		}
 	}	
 
-	int j = 0;
+	
 	if(builtinsf<numcommands){
 		builtins[builtinsf] = -1;
 	}
 	int numpids = 1+numcommands-builtinsf;
 	//int* pids = malloc(numpids*sizeof(pid_t)); // process ids of children
-	processes = malloc((2+numpids)*sizeof(char**));
-	processes[0] = seq;
-	char** numpro = malloc(sizeof(char*));
-	numpro[0] = malloc(sizeof(char));
+	processes = malloc((2+numpids)*sizeof(int**));
+	processes[0] = seqholder;
+	int** numpro = malloc(sizeof(int*));
+	numpro[0] = malloc(sizeof(int));
 	numpro[0][0] = numpids;
 	processes[1] = numpro;
 	builtinsf = 0; //indexing through builtins
 	index = 2;
+	printf("Starting fork loop\n Size char:%d \n", sizeof(char));
+	printf("Size int:%d", sizeof(int));
 	char* goodCommand;
-	while (j <= numcommands) {
+	int j = 0;
+	while (j < numcommands) {
 		if (j != builtins[builtinsf]) { // check if we want to run next command
 			//stat check here 
-			goodCommand = pathCheck(&(cmd[j])[0], paths);
+			printf("\ncmd[j][0]:%p\n", cmd[j]);
+			goodCommand = pathCheck((cmd[j])[0], paths);
 			if(goodCommand == NULL){
 				printf("OH NO! COULDN'T EXECUTE THAT COMMAND: %s", (cmd[j])[0]);
 				
 			}else{
 				(cmd[j])[0] = goodCommand;		
 				//pids[index] = fork();
-				processes[index] = malloc(2*sizeof(char*));
-				(processes[index])[0] = malloc(strlen(goodCommand)*sizeof(char));
-				(processes[index])[0] = goodCommand;
-				(processes[index])[1] = malloc(sizeof(char));
+				processes[index] = malloc(2*sizeof(int*));
+				(processes[index])[0] = malloc(strlen(goodCommand)*sizeof(int));
+				(processes[index])[0] = (int*)goodCommand;
+
+				(processes[index])[1] = malloc(sizeof(int));
+				//(processes[index])[1][0] = malloc(sizeof(int));
 				(processes[index])[1][0] = fork();
-				if ((processes[index])[1] == 0) {
+				if ((processes[index])[1][0] == 0) {
 				   /* in child */
 					if (execv((cmd[j])[0], cmd[j]) < 0) {
 					fprintf(stderr, "EXEC FAILED: %s\n", strerror(errno));
 						(processes[index])[1][0]=-1;
-						char*** failure = malloc(sizeof(char**));
-						char** seqfail = malloc(sizeof(char*));
-						seqfail[0][0] = -2;
+						int*** failure = malloc(sizeof(int**));
+						int** seqfail = malloc(sizeof(int*));
+						int* faildigit = malloc(sizeof(int));
+						*faildigit = -2;
+						seqfail[0] = faildigit;
 						failure[0] = seqfail;
 						return failure;
 				}
-				}else if((processes[index])[1]<0){
+				}else if((processes[index])[1][0]<0){
 					/* fork had an error; bail out */
 					fprintf(stderr, "FORK FAILED: %s\n", strerror(errno));
 				}
@@ -374,7 +388,7 @@ char*** parallel(char *** cmd, struct node *paths) {
 		else {
 			builtinsf += 1;
 		}
-		j ++;
+		j++;
 	}
 	/*
 	int pidindex = 0;
@@ -394,6 +408,7 @@ char*** parallel(char *** cmd, struct node *paths) {
 		(processes[0])[0][0] = -1;
 	}
 	free(builtins);
+	printf("Did parallel\n");
 	return processes;
 }
 
