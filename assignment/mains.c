@@ -20,34 +20,54 @@
 #include <signal.h>
 #include <errno.h>
 #include <assert.h>
+struct node {
+	char name[128];
+	struct node *next; 
+};
+
 long int minus(long int alpha, long int beta);
 char** arrConcat(char** addto, char** addition, int* tosize, int* addsize);
 char** tokenify(char* str);
 char*** parseCommand(char* comlist);
 int builtIn(char** command);
 int changeMode(int seq, char* newmode);
-int parallel(char *** cmd);
-int runSeq(char ** command);
+int parallel(char *** cmd, struct node *paths);
+int runSeq(char ** command, struct node *paths);
 void freeCmd(char *** cmd);
 int arrlen(char*** arr);
 void exitUsage(struct rusage* usageBegin);
+void list_clear(struct node *list);
+void list_dump(struct node *list);
+void list_insert(char *name, struct node **head);
+void list_insert_ordered(char *name,  struct node **head);
+
 
 int main(int argc, char **argv) {
 	struct rusage usageBegin;
 	getrusage(RUSAGE_SELF, &usageBegin);
 
-    char *prompt = ";) ";
-    printf("%s", prompt);
-    fflush(stdout);
-    int sequential = 1;
-	
- 
-    char buffer[1024] = "initialized";
-    while (fgets(buffer, 1024, stdin) != NULL) {
-        /* process current command line in buffer */
-        /* just a hard-coded command here right now */
-        //char *cmd[] = { "/bin/ls", "-ltr", ".", NULL };
+	char *prompt = ";) ";
+	printf("%s", prompt);
+	fflush(stdout);
+	int sequential = 1;
 
+	struct node *paths = NULL;
+	struct stat haspath;
+	int canhas = stat("shell-config", &haspath);
+	if(canhas==0){
+		FILE * pathfile = fopen("shell-config", "r");		
+		char* pathline = malloc(128*sizeof(char));
+		while(fgets(pathline, 128, pathfile) != NULL){
+			pathline[strlen(pathline)-1] = '/';
+			list_insert(pathline, &paths);
+		}
+		free(pathline);
+		fclose(pathfile);
+	}
+	
+
+	char buffer[1024] = "initialized";
+	while (fgets(buffer, 1024, stdin) != NULL) {
 		int buflen = 1023;
 		int i = 0;
 		while( i<buflen && buffer[i] != '#'){
@@ -79,13 +99,13 @@ int main(int argc, char **argv) {
 			} else if(built == -1){
 				sequential = -1;
 			} else{
-				sequential = runSeq(cmd[com]);
+				sequential = runSeq(cmd[com], paths);
 			}
 		}	
 
-    	if (sequential == 0 && cmd[com]!=NULL){
-			sequential = parallel(cmd+com);	
-    	}
+	if (sequential == 0 && cmd[com]!=NULL){
+			sequential = parallel(cmd+com, paths);	
+	}
 		if(sequential == -2){
 			exit(2);
 		}
@@ -95,14 +115,16 @@ int main(int argc, char **argv) {
 			exitUsage(&usageBegin);
 			exit(2);
 		}
-    	printf("%s", prompt);
-    	fflush(stdout);
+	printf("%s", prompt);
+	fflush(stdout);
 	}
 	exitUsage(&usageBegin);
-    printf("exited\n");
-    return 0;
 
+printf("exited\n");
+return 0;
 }
+
+
 
 void exitUsage(struct rusage * usageBegin){
 	struct rusage usageEnd;
@@ -134,9 +156,39 @@ void freeCmd(char *** cmd){
 	free(cmd[index]);
 }
 
-int runSeq(char ** command){
+char* pathCheck(char* command, struct node *paths){
+	struct stat ispath;
+	int canhas = stat(command, &ispath);
+	if(canhas==0){
+		return command;
+	}
+	char *newcommand = malloc(sizeof(command)+(128*sizeof(char*))); //keep track of this shit -- kept track
+	while(paths!=NULL){
+		strcpy(newcommand, (*paths).name);
+		newcommand = strcat(newcommand, command);
+		//printf("new com: -%s-\n", newcommand);
+		canhas = stat(newcommand, &ispath);
+		if(canhas==0){
+			return newcommand;
+		}
+		newcommand[0] = '0';
+		paths = (*paths).next;
+	}
+	free(newcommand);
+	return NULL;
+}
+
+int runSeq(char ** command, struct node *paths){
+	//stat check here
+	char* goodCommand = pathCheck(command[0], paths);
+	if(goodCommand == NULL){
+		printf("OH NO! COULDN'T EXECUTE THAT COMMAND: %s\n", command[0]);
+		return 1;
+	}else{
+		command[0] = goodCommand;
+	}
 	pid_t p = fork();
-    if (p == 0) {
+	if (p == 0) {
 		/* in child */
 		if (execv(command[0], command) < 0) {
 			fprintf(stderr, "OH NO! COULDN'T EXECUTE THAT COMMAND: %s\n", strerror(errno));
@@ -147,8 +199,8 @@ int runSeq(char ** command){
 		int rstatus = 0;
 		pid_t childp = wait(&rstatus);
 		/* for this simple starter code, the only child process we should
-	       "wait" for is the one we just spun off, so check that we got the
-	       same process id */ 
+	   "wait" for is the one we just spun off, so check that we got the
+	   same process id */ 
 		assert(p == childp);
 		printf("CHILD PROCESS (%d) DID AN EXEC AND GOT PASSED TO IT'S PARENT. Return val %d\n", childp, rstatus);
 	} else {
@@ -167,13 +219,13 @@ int arrlen(char*** arr){
 	return count-1;
 }
 
-int parallel(char *** cmd) {
+int parallel(char *** cmd, struct node *paths) {
 
   /* Check each element of commands by calling builtin. If builtin returns 0 then not a built in, equals 1 then run all processes --> do changemode, equals -1 run all processes ..> exit */
 
 	char* modechange = "NOT THIS"; // command to change mode
 	unsigned int modetest=0;
-	int exit = 0;     // change to 1 if i get an exit command
+	int exit = 0; // change to 1 if i get an exit command
 	int index = 0;	// place in commands
 	int rbuiltin;	// result of builtin
 	int seq = 0; // will return seq
@@ -207,20 +259,28 @@ int parallel(char *** cmd) {
 	builtinsf = 0; //indexing through builtins
 	index = 0;
 	while (j <= numcommands) {
-		if (j != builtins[builtinsf]) { // check if we want to run next command 
-			pids[index] = fork();
-			if (pids[index] == 0) {
-			   /* in child */
-				if (execv((cmd[j])[0], cmd[j]) < 0) {
-			    	fprintf(stderr, "EXEC FAILED: %s\n", strerror(errno));
-					pids[index]=-1;
-					return -2;
-			    }
-			}else if(pids[index]<0){
-				/* fork had an error; bail out */
-				fprintf(stderr, "FORK FAILED: %s\n", strerror(errno));
+		if (j != builtins[builtinsf]) { // check if we want to run next command
+			//stat check here 
+			char* goodCommand = pathCheck((cmd[j])[0], paths);
+			if(goodCommand == NULL){
+				printf("OH NO! COULDN'T EXECUTE THAT COMMAND: %s", (cmd[j])[0]);
+				
+			}else{
+				(cmd[j])[0] = goodCommand;		
+				pids[index] = fork();
+				if (pids[index] == 0) {
+				   /* in child */
+					if (execv((cmd[j])[0], cmd[j]) < 0) {
+					fprintf(stderr, "EXEC FAILED: %s\n", strerror(errno));
+						pids[index]=-1;
+						return -2;
+				}
+				}else if(pids[index]<0){
+					/* fork had an error; bail out */
+					fprintf(stderr, "FORK FAILED: %s\n", strerror(errno));
+				}
+				index++;
 			}
-			index++;
 		}
 		else {
 			builtinsf += 1;
@@ -444,4 +504,58 @@ char** tokenify(char* str)
 	//printf("has null\n");
 	return totalarray;
 }
+
+/* This is linked list stuff. This should be handy*/
+
+
+void list_insert_ordered(char *name,  struct node **head) 
+{
+	struct node *newnode = malloc(sizeof(struct node));
+	strncpy( (*newnode).name, name, 127);
+	if(NULL == *head){
+		(*newnode).next = NULL;
+		*head = newnode;
+		return;
+	}
+	struct node *pre = NULL;
+	struct node *post = *head;
+	while(NULL != post && strcasecmp((*post).name, name) < 1){
+		pre = post;
+		post = (*post).next;
+	}
+	(*newnode).next = post;
+	if(NULL == pre){
+		*head = newnode;
+		return;	
+	}
+	(*pre).next = newnode;
+	return;  
+}
+
+
+void list_insert(char *name, struct node **head) {
+	struct node *newnode = malloc(sizeof(struct node));
+	strncpy(newnode->name, name, 127);
+
+	newnode->next = *head;
+	*head = newnode;
+}
+
+void list_dump(struct node *list) {
+	int i = 0;
+	printf("\n\nDumping list\n");
+	while (list != NULL) {
+		printf("%d: %s\n", i++, list->name);
+		list = list->next;
+	}
+}
+
+void list_clear(struct node *list) {
+	while (list != NULL) {
+		struct node *tmp = list;
+		list = list->next;
+		free(tmp);
+	}
+}
+  
 

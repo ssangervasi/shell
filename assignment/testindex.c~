@@ -18,6 +18,12 @@
 
 
 int main(int argc, char **argv){
+	char* command = "this is a command";
+	char *newcommand = malloc(sizeof(command)+(128*sizeof(char*)));
+	*newcommand = command;
+	printf("-%s-", newcommand);
+
+
 	char *** test = malloc(sizeof(char**)*5);
 	char* first[] = {"this", "is", "first"};
 	char* second[] = {"this", "is", "second"};
@@ -38,7 +44,7 @@ int main(int argc, char **argv){
 		}
 		printf(".\n");
 	}
-	char *** tester = (test+sizeof(char**));
+	char *** tester = (test+1);
 	printf("Now tester\n");
 	index = 0;
 	for(; tester[index]!=NULL; index++){
